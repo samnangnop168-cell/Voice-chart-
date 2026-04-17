@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voice Archive + History</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.all.min.js"></script>
+    <style>
+        :root { --primary: #6c5ce7; --bg: #f4f7f6; }
+        body { font-family: system-ui, sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        
+        .recorder-box { background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center; width: 100%; max-width: 400px; margin-bottom: 20px; }
+        
+        .history-box { width: 100%; max-width: 400px; }
+        .history-item { background: white; margin-bottom: 10px; padding: 15px; border-radius: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
+        
+        .btn { border: none; cursor: pointer; border-radius: 50%; width: 60px; height: 60px; transition: 0.3s; background: #eee; }
+        .btn-rec { background: white; border: 2px solid #ddd; }
+        .recording { background: #ff7675 !important; border: none; animation: pulse 1s infinite; }
+        .export-btn { background: var(--primary); color: white; border-radius: 8px; padding: 8px 12px; font-size: 12px; width: auto; height: auto; text-decoration: none; }
+        
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,118,117,0.4); } 70% { box-shadow: 0 0 0 15px rgba(255,118,117,0); } }
+        svg { width: 24px; fill: #333; }
+        .recording svg { fill: white; }
+    </style>
+</head>
+<body>
+
+    <div class="recorder-box">
+        <h2 id="status">Ready</h2>
+        <div style="display:flex; justify-content: center; gap: 15px;">
+            <button id="startBtn" class="btn btn-rec">
+                <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/></svg>
+            </button>
+            <button id="stopBtn" class="btn" disabled>
+                <svg viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="history-box">
+        <h3>History</h3>
+        <div id="historyList"></div>
+    </div>
+
+    <script>
+        let audioCtx, processor, source, encoder, chunks = [];
+        let db;
+
+        // 1. Initialize Database
+        const request = indexedDB.open("VoiceHistoryDB", 1);
+        request.onupgradeneeded = e => {
+            db = e.target.result;
+            db.createObjectStore("recordings", { keyPath: "id", autoIncrement: true });
+        };
+        request.onsuccess = e => { db = e.target.result; loadHistory(); };
+
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const status = document.getElementById('status');
+
+        startBtn.onclick = async () => {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            audioCtx = new AudioContext();
+            encoder = new lamejs.Mp3Encoder(1, audioCtx.sampleRate, 128);
+            chunks = [];
+            source = audioCtx.createMediaStreamSource(stream);
+            processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+            processor.onaudioprocess = e => {
+                const pcm = e.inputBuffer.getChannelData(0);
+                const int16 = new Int16Array(pcm.length);
+                for (let i = 0; i < pcm.length; i++) int16[i] = pcm[i] < 0 ? pcm[i] * 32768 : pcm[i] * 32767;
+                const buf = encoder.encodeBuffer(int16);
+                if (buf.length > 0) chunks.push(new Uint8Array(buf));
+            };
+
+            source.connect(processor);
+            processor.connect(audioCtx.destination);
+            
+            startBtn.classList.add('recording');
+            startBtn.disabled = true; stopBtn.disabled = false;
+            status.innerText = "Recording...";
+        };
+
+        stopBtn.onclick = () => {
+            const final = encoder.flush();
+            if (final.length > 0) chunks.push(new Uint8Array(final));
+            const blob = new Blob(chunks, { type: 'audio/mp3' });
+            
+            saveToHistory(blob);
+
+            source.mediaStream.getTracks().forEach(t => t.stop());
+            audioCtx.close();
+            
+            startBtn.classList.remove('recording');
+            startBtn.disabled = false; stopBtn.disabled = true;
+            status.innerText = "Saved to History";
+        };
+
+        function saveToHistory(blob) {
+            const transaction = db.transaction(["recordings"], "readwrite");
+            const store = transaction.objectStore("recordings");
+            const entry = { blob: blob, date: new Date().toLocaleString() };
+            store.add(entry);
+            transaction.oncomplete = () => loadHistory();
+        }
+
+        function loadHistory() {
+            const list = document.getElementById('historyList');
+            list.innerHTML = "";
+            const store = db.transaction("recordings").objectStore("recordings");
+            store.openCursor(null, "prev").onsuccess = e => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    const item = document.createElement('div');
+                    item.className = 'history-item';
+                    const url = URL.createObjectURL(cursor.value.blob);
+                    item.innerHTML = `
+                        <span>${cursor.value.date}</span>
+                        <a href="${url}" download="voice_${cursor.value.id}.mp3" class="export-btn">Export MP3</a>
+                    `;
+                    list.appendChild(item);
+                    cursor.continue();
+                }
+            };
+        }
+    </script>
+</body>
+</html>
