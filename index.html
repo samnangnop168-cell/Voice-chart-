@@ -3,61 +3,73 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Archive + History</title>
+    <title>Voice Recorder (3-Day History)</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.all.min.js"></script>
     <style>
-        :root { --primary: #6c5ce7; --bg: #f4f7f6; }
-        body { font-family: system-ui, sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 20px; }
-        
-        .recorder-box { background: white; padding: 30px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center; width: 100%; max-width: 400px; margin-bottom: 20px; }
-        
-        .history-box { width: 100%; max-width: 400px; }
-        .history-item { background: white; margin-bottom: 10px; padding: 15px; border-radius: 15px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.03); }
-        
-        .btn { border: none; cursor: pointer; border-radius: 50%; width: 60px; height: 60px; transition: 0.3s; background: #eee; }
-        .btn-rec { background: white; border: 2px solid #ddd; }
+        :root { --primary: #6c5ce7; --bg: #f8f9fa; }
+        body { font-family: sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .recorder-card { background: white; padding: 30px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); text-align: center; width: 100%; max-width: 400px; }
+        .history-list { width: 100%; max-width: 400px; margin-top: 20px; }
+        .item { background: white; padding: 15px; margin-bottom: 10px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid var(--primary); }
+        .btn { width: 60px; height: 60px; border-radius: 50%; border: 1px solid #ddd; cursor: pointer; background: white; }
         .recording { background: #ff7675 !important; border: none; animation: pulse 1s infinite; }
-        .export-btn { background: var(--primary); color: white; border-radius: 8px; padding: 8px 12px; font-size: 12px; width: auto; height: auto; text-decoration: none; }
-        
+        .export-link { background: var(--primary); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; }
         @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(255,118,117,0.4); } 70% { box-shadow: 0 0 0 15px rgba(255,118,117,0); } }
-        svg { width: 24px; fill: #333; }
-        .recording svg { fill: white; }
     </style>
 </head>
 <body>
 
-    <div class="recorder-box">
+    <div class="recorder-card">
         <h2 id="status">Ready</h2>
-        <div style="display:flex; justify-content: center; gap: 15px;">
-            <button id="startBtn" class="btn btn-rec">
-                <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/></svg>
-            </button>
-            <button id="stopBtn" class="btn" disabled>
-                <svg viewBox="0 0 24 24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4z"/></svg>
-            </button>
+        <div style="display:flex; justify-content:center; gap:15px;">
+            <button id="startBtn" class="btn"><svg viewBox="0 0 24 24" width="24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/></svg></button>
+            <button id="stopBtn" class="btn" disabled><svg viewBox="0 0 24 24" width="24"><path d="M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4z"/></svg></button>
         </div>
     </div>
 
-    <div class="history-box">
-        <h3>History</h3>
-        <div id="historyList"></div>
+    <div class="history-list">
+        <h3>History (Auto-deletes after 3 days)</h3>
+        <div id="list"></div>
     </div>
 
     <script>
-        let audioCtx, processor, source, encoder, chunks = [];
-        let db;
+        let db, audioCtx, processor, source, encoder, chunks = [];
 
-        // 1. Initialize Database
-        const request = indexedDB.open("VoiceHistoryDB", 1);
+        // 1. Open Database
+        const request = indexedDB.open("VoiceArchiveDB", 1);
         request.onupgradeneeded = e => {
             db = e.target.result;
             db.createObjectStore("recordings", { keyPath: "id", autoIncrement: true });
         };
-        request.onsuccess = e => { db = e.target.result; loadHistory(); };
+        request.onsuccess = e => { 
+            db = e.target.result; 
+            cleanupOldRecords(); // Run auto-delete on start
+            loadList(); 
+        };
 
+        // 2. Auto-Delete Logic
+        function cleanupOldRecords() {
+            const transaction = db.transaction(["recordings"], "readwrite");
+            const store = transaction.objectStore("recordings");
+            const now = Date.now();
+            const threeDaysInMs = 3 * 24 * 60 * 60 * 1000;
+
+            store.openCursor().onsuccess = e => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    const recordDate = cursor.value.timestamp;
+                    if (now - recordDate > threeDaysInMs) {
+                        cursor.delete(); // Delete if older than 3 days
+                        console.log("Deleted an old record");
+                    }
+                    cursor.continue();
+                }
+            };
+        }
+
+        // 3. Recorder Logic
         const startBtn = document.getElementById('startBtn');
         const stopBtn = document.getElementById('stopBtn');
-        const status = document.getElementById('status');
 
         startBtn.onclick = async () => {
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -77,10 +89,9 @@
 
             source.connect(processor);
             processor.connect(audioCtx.destination);
-            
             startBtn.classList.add('recording');
             startBtn.disabled = true; stopBtn.disabled = false;
-            status.innerText = "Recording...";
+            document.getElementById('status').innerText = "Recording...";
         };
 
         stopBtn.onclick = () => {
@@ -88,39 +99,38 @@
             if (final.length > 0) chunks.push(new Uint8Array(final));
             const blob = new Blob(chunks, { type: 'audio/mp3' });
             
-            saveToHistory(blob);
+            // Save with Timestamp
+            const transaction = db.transaction(["recordings"], "readwrite");
+            const store = transaction.objectStore("recordings");
+            store.add({ 
+                blob: blob, 
+                timestamp: Date.now(), 
+                dateStr: new Date().toLocaleString() 
+            });
+
+            transaction.oncomplete = () => loadList();
 
             source.mediaStream.getTracks().forEach(t => t.stop());
             audioCtx.close();
-            
             startBtn.classList.remove('recording');
             startBtn.disabled = false; stopBtn.disabled = true;
-            status.innerText = "Saved to History";
+            document.getElementById('status').innerText = "Saved to History";
         };
 
-        function saveToHistory(blob) {
-            const transaction = db.transaction(["recordings"], "readwrite");
-            const store = transaction.objectStore("recordings");
-            const entry = { blob: blob, date: new Date().toLocaleString() };
-            store.add(entry);
-            transaction.oncomplete = () => loadHistory();
-        }
-
-        function loadHistory() {
-            const list = document.getElementById('historyList');
-            list.innerHTML = "";
-            const store = db.transaction("recordings").objectStore("recordings");
-            store.openCursor(null, "prev").onsuccess = e => {
+        function loadList() {
+            const listDiv = document.getElementById('list');
+            listDiv.innerHTML = "";
+            db.transaction("recordings").objectStore("recordings").openCursor(null, "prev").onsuccess = e => {
                 const cursor = e.target.result;
                 if (cursor) {
-                    const item = document.createElement('div');
-                    item.className = 'history-item';
+                    const div = document.createElement('div');
+                    div.className = 'item';
                     const url = URL.createObjectURL(cursor.value.blob);
-                    item.innerHTML = `
-                        <span>${cursor.value.date}</span>
-                        <a href="${url}" download="voice_${cursor.value.id}.mp3" class="export-btn">Export MP3</a>
+                    div.innerHTML = `
+                        <span>${cursor.value.dateStr}</span>
+                        <a href="${url}" download="voice_${cursor.value.id}.mp3" class="export-link">Export MP3</a>
                     `;
-                    list.appendChild(item);
+                    listDiv.appendChild(div);
                     cursor.continue();
                 }
             };
