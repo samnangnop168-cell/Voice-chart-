@@ -3,77 +3,65 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Report Pro</title>
+    <title>Voice Pro - Local & Cloud</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.all.min.js"></script>
     <style>
-        :root { --primary: #007aff; --bg: #f2f2f7; --card: #ffffff; }
-        body { font-family: -apple-system, sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
-        .card { background: var(--card); padding: 30px; border-radius: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 100%; max-width: 400px; text-align: center; }
-        input { width: 90%; padding: 14px; margin: 15px 0; border: 1.5px solid #e5e5ea; border-radius: 12px; font-size: 16px; outline: none; transition: 0.2s; text-align: center; }
-        input:focus { border-color: var(--primary); }
-        .controls { display: flex; justify-content: center; gap: 20px; margin-top: 10px; }
-        .btn { width: 70px; height: 70px; border-radius: 50%; border: none; cursor: pointer; transition: 0.3s; display: flex; align-items: center; justify-content: center; }
-        #startBtn { background: var(--primary); color: white; }
-        #stopBtn { background: #8e8e93; color: white; }
-        .recording { background: #ff3b30 !important; animation: pulse 1.2s infinite; }
-        .history { width: 100%; max-width: 400px; margin-top: 30px; }
-        .item { background: var(--card); padding: 16px; margin-bottom: 12px; border-radius: 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: 0 4px 12px rgba(0,0,0,0.03); border-left: 6px solid var(--primary); }
-        .user-tag { font-weight: bold; color: #1c1c1e; font-size: 15px; }
-        .time-tag { font-size: 12px; color: #8e8e93; margin-top: 4px; }
-        .status-badge { font-size: 11px; font-weight: bold; padding: 4px 8px; border-radius: 6px; background: #e1f5fe; color: var(--primary); }
-        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+        :root { --blue: #007aff; --red: #ff3b30; --bg: #f2f2f7; }
+        body { font-family: sans-serif; background: var(--bg); display: flex; flex-direction: column; align-items: center; padding: 20px; }
+        .card { background: white; padding: 25px; border-radius: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 380px; text-align: center; }
+        input { width: 85%; padding: 12px; margin-bottom: 20px; border-radius: 10px; border: 1px solid #ddd; text-align: center; font-size: 16px; }
+        .btn { width: 75px; height: 75px; border-radius: 50%; border: none; cursor: pointer; font-weight: bold; color: white; transition: 0.3s; margin: 5px; }
+        #startBtn { background: var(--blue); }
+        #stopBtn { background: #8e8e93; }
+        .recording { background: var(--red) !important; animation: pulse 1s infinite; }
+        .history { width: 100%; max-width: 380px; margin-top: 25px; }
+        .item { background: white; padding: 15px; margin-bottom: 8px; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; border-left: 6px solid var(--blue); }
+        .user-tag { font-weight: bold; color: #1c1c1e; }
+        .time-tag { font-size: 11px; color: #8e8e93; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.08); } 100% { transform: scale(1); } }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h2 style="margin:0 0 10px 0;">Voice Reporter</h2>
+        <h2>Report Voice</h2>
         <input type="text" id="userName" placeholder="Type Your Name..." />
-        <div id="status" style="font-weight:600; color:#8e8e93; margin-bottom:15px;">Ready</div>
-        <div class="controls">
-            <button id="startBtn" class="btn"><b>REC</b></button>
-            <button id="stopBtn" class="btn" disabled><b>STOP</b></button>
-        </div>
+        <div id="status" style="margin-bottom:15px; font-weight:bold; color:#555">Ready</div>
+        <button id="startBtn" class="btn">REC</button>
+        <button id="stopBtn" class="btn" disabled>STOP</button>
     </div>
 
     <div class="history">
-        <h3 style="margin-bottom:15px; color:#1c1c1e;">Recent History</h3>
-        <div id="list"><em>No reports today.</em></div>
+        <h3>Recent Records (Local)</h3>
+        <div id="list">No history yet.</div>
     </div>
 
     <script>
-        const scriptURL = "https://script.google.com/macros/s/AKfycbyMH4XwrTRrxJTN-SnJ5WLth48Vwnv-39P5Ag2T32rc-_w8qemXzjZai0FGX47vpf2I/exec"; 
+        const scriptURL = "https://script.google.com/macros/s/AKfycbwZofma_cjcwjhtwRK_56P1rvzAVDRGzxfMVFSf9DFqyuhdxayCLVuiFygkveCUnXFO/exec"; 
         
-        // Load persistent data
-        document.getElementById('userName').value = localStorage.getItem('user_name') || "";
-        renderHistory();
+        document.getElementById('userName').value = localStorage.getItem('last_user') || "";
+        updateUI();
 
         let audioCtx, encoder, chunks = [];
 
-        function renderHistory() {
-            const history = JSON.parse(localStorage.getItem('local_voice_history') || "[]");
-            const listDiv = document.getElementById('list');
+        function updateUI() {
+            const history = JSON.parse(localStorage.getItem('my_history') || "[]");
+            const list = document.getElementById('list');
             if (history.length === 0) return;
-            
-            listDiv.innerHTML = "";
+            list.innerHTML = "";
             history.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'item';
-                div.innerHTML = `
-                    <div>
-                        <div class="user-tag">${item.name}</div>
-                        <div class="time-tag">${item.time}</div>
-                    </div>
-                    <span class="status-badge">SAVED</span>
-                `;
-                listDiv.appendChild(div);
+                div.innerHTML = `<div><div class="user-tag">${item.name}</div><div class="time-tag">${item.time}</div></div>
+                                 <div style="font-size:10px; color:green;">✓ RECORDED</div>`;
+                list.appendChild(div);
             });
         }
 
         document.getElementById('startBtn').onclick = async () => {
-            const user = document.getElementById('userName').value;
-            if(!user) return alert("Please enter your name!");
-            localStorage.setItem('user_name', user);
+            const name = document.getElementById('userName').value;
+            if(!name) return alert("Enter Name!");
+            localStorage.setItem('last_user', name);
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioCtx = new AudioContext();
@@ -89,7 +77,6 @@
                 if (buf.length > 0) chunks.push(new Uint8Array(buf));
             };
             source.connect(proc); proc.connect(audioCtx.destination);
-            
             document.getElementById('startBtn').classList.add('recording');
             document.getElementById('startBtn').disabled = true;
             document.getElementById('stopBtn').disabled = false;
@@ -97,23 +84,24 @@
         };
 
         document.getElementById('stopBtn').onclick = async () => {
-            const user = document.getElementById('userName').value;
+            const name = document.getElementById('userName').value;
             const now = new Date();
-            const timeStr = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) + " | " + now.toLocaleDateString();
-            
-            // 1. Instant Local Update
-            let localHistory = JSON.parse(localStorage.getItem('local_voice_history') || "[]");
-            localHistory.unshift({ name: user, time: timeStr });
-            if (localHistory.length > 10) localHistory.pop(); // Keep last 10
-            localStorage.setItem('local_voice_history', JSON.stringify(localHistory));
-            renderHistory();
+            const timeStr = now.toLocaleTimeString() + " " + now.toLocaleDateString();
 
-            // 2. Prepare Cloud Upload
-            document.getElementById('status').innerText = "SYNCING...";
+            // 1. Instant Local Save
+            let hist = JSON.parse(localStorage.getItem('my_history') || "[]");
+            hist.unshift({ name: name, time: timeStr });
+            localStorage.setItem('my_history', JSON.stringify(hist.slice(0, 10)));
+            updateUI();
+
+            // 2. Prepare Cloud Sync
+            document.getElementById('status').innerText = "SYNCING TO DRIVE...";
             const final = encoder.flush();
             if (final.length > 0) chunks.push(new Uint8Array(final));
             const blob = new Blob(chunks, { type: 'audio/mp3' });
-            const fileName = `${user}_${now.getDate()}-${now.getMonth()+1}_${now.getHours()}-${now.getMinutes()}.mp3`;
+            
+            // File format: Name_Date_Time.mp3
+            const fileName = `${name}_${now.getDate()}-${now.getMonth()+1}_${now.getHours()}-${now.getMinutes()}.mp3`;
 
             const reader = new FileReader();
             reader.readAsDataURL(blob);
@@ -121,10 +109,9 @@
                 const base64 = reader.result.split(',')[1];
                 fetch(scriptURL, { 
                     method: 'POST', 
-                    body: JSON.stringify({ base64: base64, name: fileName, userName: user }) 
+                    body: JSON.stringify({ base64: base64, name: fileName, userName: name }) 
                 }).then(() => {
-                    document.getElementById('status').innerText = "DONE";
-                    setTimeout(() => document.getElementById('status').innerText = "READY", 2000);
+                    document.getElementById('status').innerText = "CLOUD SYNC OK";
                 });
             };
 
